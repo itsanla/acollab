@@ -1,4 +1,4 @@
-# activecollab-cli
+# acollab-cli
 
 Unofficial command-line client for **self-hosted ActiveCollab** (API v1). Not affiliated with
 ActiveCollab / A51 doo. Built and verified against ActiveCollab 8.0.31.
@@ -6,10 +6,14 @@ ActiveCollab / A51 doo. Built and verified against ActiveCollab 8.0.31.
 ## Install
 
 ```bash
-npm install -g activecollab-cli
+npm install -g acollab-cli
 ```
 
-(Or, before it's published to npm: `npm install -g git+https://github.com/itsanla/activecollab-cli.git`)
+Or straight from GitHub, no npm registry needed:
+
+```bash
+npm install -g itsanla/acollab
+```
 
 ## Usage
 
@@ -17,7 +21,7 @@ npm install -g activecollab-cli
 collab login https://your-activecollab-instance.example.com
 # prompts for email + password, stores a session token in ~/.config/collab-cli/config.json
 
-collab              # same as "collab tasks" — your My Work list, grouped by project
+collab              # same as "collab tasks", your My Work list, grouped by project
 collab tasks        # open tasks assigned to you
 collab tasks --all  # include completed tasks
 collab projects     # every project you can see
@@ -42,8 +46,8 @@ in exchange for a reusable token). The token is stored locally in
 
 ## What's not implemented yet
 
-Timesheet and Availability (two of the four tabs on the My Work page) aren't covered yet —
-their API paths weren't confirmed working during initial testing. PRs welcome.
+Timesheet and Availability, two of the four tabs on the My Work page, aren't covered yet.
+Their API paths weren't confirmed working during initial testing. PRs welcome.
 
 ## License
 
