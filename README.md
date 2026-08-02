@@ -15,6 +15,18 @@ Or straight from GitHub, no npm registry needed:
 npm install -g itsanla/acollab
 ```
 
+### Installing on a server without root
+
+`npm install -g` writes to a system directory by default (e.g. `/usr/lib/node_modules`),
+which fails with `EACCES` if your user can't write there and you don't have sudo. Point
+npm's global prefix at a directory you own instead:
+
+```bash
+npm config set prefix ~/.npm-global
+export PATH="$HOME/.npm-global/bin:$PATH"   # add this line to your shell rc file too
+npm install -g acollab-cli
+```
+
 ## Usage
 
 ```bash
