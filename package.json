@@ -9,7 +9,7 @@
     "url": "git+https://github.com/itsanla/acollab.git"
   },
   "bin": {
-    "collab": "./bin/collab.js"
+    "collab": "bin/collab.js"
   },
   "engines": {
     "node": ">=18"
