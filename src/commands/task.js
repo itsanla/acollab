@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { requireConfig } from '../config.js';
 import { Client } from '../client.js';
-import { formatDate, formatLabel } from '../format.js';
+import { formatDate, formatLabel, htmlToPlainText } from '../format.js';
 
 async function resolveProjectId(client, userId, taskId) {
   const data = await client.myTasks(userId);
@@ -35,15 +35,14 @@ export async function taskCommand(taskId) {
   if (t.due_on) console.log(`Due: ${formatDate(t.due_on)}`);
   console.log(`Assignee: ${t.assignee_id ? (userById.get(t.assignee_id) ?? `user #${t.assignee_id}`) : chalk.gray('unassigned')}`);
   if (t.body) {
-    console.log('\n' + t.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+    console.log('\n' + htmlToPlainText(t.body));
   }
 
   if (data.comments?.length) {
     console.log(chalk.bold(`\nComments (${data.comments.length}):`));
     for (const c of data.comments) {
       const when = new Date(c.created_on * 1000).toISOString().slice(0, 16).replace('T', ' ');
-      const body = (c.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      console.log(`  ${chalk.cyan(c.created_by_name)} ${chalk.gray(when)}\n    ${body}`);
+      console.log(`  ${chalk.cyan(c.created_by_name)} ${chalk.gray(when)}\n    ${htmlToPlainText(c.body)}`);
     }
   }
 }
