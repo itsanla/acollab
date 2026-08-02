@@ -45,7 +45,7 @@ program
   .action(tasksCommand);
 
 program
-  .command('task <projectId> <taskId>')
+  .command('task <taskId>')
   .description('Show one task in detail, including comments')
   .action(taskCommand);
 
@@ -55,10 +55,16 @@ program
   .option('-n, --limit <n>', 'how many entries to show', '20')
   .action(activityCommand);
 
-program.action(() => {
-  // no subcommand given: default to "tasks", the most common use case
-  tasksCommand({});
-});
+program
+  .argument('[taskIdOrNothing]')
+  .action((taskIdOrNothing) => {
+    // "collab" alone -> the My Work list. "collab <number>" -> shorthand for "collab task <number>".
+    if (taskIdOrNothing) {
+      taskCommand(taskIdOrNothing);
+    } else {
+      tasksCommand({});
+    }
+  });
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(chalk.red(err.message || err));

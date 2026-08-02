@@ -3,28 +3,47 @@ import { requireConfig } from '../config.js';
 import { Client } from '../client.js';
 import { formatDate, formatLabel } from '../format.js';
 
-export async function taskCommand(projectId, taskId) {
-  if (!projectId || !taskId) {
-    console.error('Usage: collab task <project-id> <task-id>  (run "collab tasks" first to find these IDs)');
+async function resolveProjectId(client, userId, taskId) {
+  const data = await client.myTasks(userId);
+  const all = [...data.tasks, ...data.subtasks];
+  const match = all.find((t) => String(t.id) === String(taskId));
+  return match?.project_id ?? null;
+}
+
+export async function taskCommand(taskId) {
+  if (!taskId) {
+    console.error('Usage: collab task <taskId>  (or just: collab <taskId>)');
+    console.error('Find IDs with "collab tasks" or "collab tasks --all".');
     process.exit(1);
   }
   const config = requireConfig();
   const client = new Client(config);
-  const data = await client.taskDetail(projectId, taskId);
+
+  const projectId = await resolveProjectId(client, config.userId, taskId);
+  if (!projectId) {
+    console.error(chalk.red(`Task ${taskId} isn't in your My Work list (checked open + completed).`));
+    console.error('It may not be assigned to you, or the ID is wrong. Run "collab tasks --all" to check.');
+    process.exit(1);
+  }
+
+  const [data, users] = await Promise.all([client.taskDetail(projectId, taskId), client.users()]);
   const t = data.single;
+  const userById = new Map(users.map((u) => [u.id, u.display_name]));
 
   console.log(chalk.bold(`#${t.task_number} ${t.name}`));
   console.log(`${formatLabel(t.labels)}  ${chalk.gray(t.is_completed ? 'completed' : 'open')}`);
   if (t.due_on) console.log(`Due: ${formatDate(t.due_on)}`);
-  console.log(`Assignee: ${t.assignee_id ?? chalk.gray('unassigned')}`);
+  console.log(`Assignee: ${t.assignee_id ? (userById.get(t.assignee_id) ?? `user #${t.assignee_id}`) : chalk.gray('unassigned')}`);
   if (t.body) {
-    console.log('\n' + t.body.replace(/<[^>]+>/g, '').trim());
+    console.log('\n' + t.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
   }
 
   if (data.comments?.length) {
     console.log(chalk.bold(`\nComments (${data.comments.length}):`));
     for (const c of data.comments) {
-      console.log(`  ${chalk.cyan(c.created_by_name)}: ${(c.body || '').replace(/<[^>]+>/g, '').trim()}`);
+      const when = new Date(c.created_on * 1000).toISOString().slice(0, 16).replace('T', ' ');
+      const body = (c.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      console.log(`  ${chalk.cyan(c.created_by_name)} ${chalk.gray(when)}\n    ${body}`);
     }
   }
 }
