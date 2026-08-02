@@ -33,17 +33,20 @@ npm install -g acollab-cli
 collab login https://your-activecollab-instance.example.com
 # prompts for email + password, stores a session token in ~/.config/collab-cli/config.json
 
-collab              # same as "collab tasks", your My Work list, grouped by project
-collab tasks        # open tasks assigned to you
+collab              # no arguments: shows this command list (same as --help)
+collab tasks        # your My Work list, grouped by project, open tasks only
 collab tasks --all  # include completed tasks
 collab projects     # every project you can see
-collab task <projectId> <taskId>   # one task in full, with comments
+collab task <taskId>   # one task in full, with comments (project is resolved for you)
+collab <taskId>         # shorthand for "collab task <taskId>"
 collab activity     # recent notifications
 collab whoami
 collab logout
 ```
 
-IDs for `collab task` come from the left column of `collab tasks`.
+IDs come from the left column of `collab tasks`. `collab task` only looks up tasks that
+are in your own My Work list (open or completed); it can't look up arbitrary tasks you're
+not assigned to.
 
 ## Requirements
 

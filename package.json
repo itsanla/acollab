@@ -1,6 +1,6 @@
 {
   "name": "acollab-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unofficial command-line client for self-hosted ActiveCollab (API v1)",
   "license": "MIT",
   "type": "module",

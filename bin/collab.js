@@ -14,7 +14,8 @@ const program = new Command();
 program
   .name('collab')
   .description('Unofficial CLI for self-hosted ActiveCollab')
-  .version('0.1.0');
+  .version('0.1.1')
+  .showHelpAfterError(); // "collab task" (missing <taskId>) shows full usage, not just a one-line error
 
 program
   .command('login <url>')
@@ -40,7 +41,7 @@ program
 
 program
   .command('tasks')
-  .description('Your "My Work" tasks, grouped by project and list (default view)')
+  .description('Your "My Work" tasks, grouped by project and list')
   .option('-a, --all', 'include completed tasks')
   .action(tasksCommand);
 
@@ -56,13 +57,14 @@ program
   .action(activityCommand);
 
 program
-  .argument('[taskIdOrNothing]')
-  .action((taskIdOrNothing) => {
-    // "collab" alone -> the My Work list. "collab <number>" -> shorthand for "collab task <number>".
-    if (taskIdOrNothing) {
-      taskCommand(taskIdOrNothing);
+  .argument('[taskId]')
+  .action((taskId) => {
+    // "collab" alone -> show the command list (like --help).
+    // "collab <number>" -> shorthand for "collab task <number>".
+    if (taskId) {
+      taskCommand(taskId);
     } else {
-      tasksCommand({});
+      program.help();
     }
   });
 
