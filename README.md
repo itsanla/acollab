@@ -1,0 +1,50 @@
+# activecollab-cli
+
+Unofficial command-line client for **self-hosted ActiveCollab** (API v1). Not affiliated with
+ActiveCollab / A51 doo. Built and verified against ActiveCollab 8.0.31.
+
+## Install
+
+```bash
+npm install -g activecollab-cli
+```
+
+(Or, before it's published to npm: `npm install -g git+https://github.com/itsanla/activecollab-cli.git`)
+
+## Usage
+
+```bash
+collab login https://your-activecollab-instance.example.com
+# prompts for email + password, stores a session token in ~/.config/collab-cli/config.json
+
+collab              # same as "collab tasks" — your My Work list, grouped by project
+collab tasks        # open tasks assigned to you
+collab tasks --all  # include completed tasks
+collab projects     # every project you can see
+collab task <projectId> <taskId>   # one task in full, with comments
+collab activity     # recent notifications
+collab whoami
+collab logout
+```
+
+IDs for `collab task` come from the left column of `collab tasks`.
+
+## Requirements
+
+- Node.js 18+ (uses the built-in `fetch`)
+- A self-hosted ActiveCollab instance with API v1 enabled (this is the default)
+
+## How it authenticates
+
+Uses ActiveCollab's own `POST /api/v1/issue-token` endpoint (username + password once,
+in exchange for a reusable token). The token is stored locally in
+`~/.config/collab-cli/config.json`, never sent anywhere except your own server.
+
+## What's not implemented yet
+
+Timesheet and Availability (two of the four tabs on the My Work page) aren't covered yet —
+their API paths weren't confirmed working during initial testing. PRs welcome.
+
+## License
+
+MIT
