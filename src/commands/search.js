@@ -6,6 +6,8 @@ import { loadContext } from '../context.js';
 import { normalizeTask } from '../normalize.js';
 import { emit, emitError, EXIT } from '../output.js';
 
+const SEARCHABLE_TYPES = ['task', 'project', 'note', 'discussion', 'file'];
+
 // Server-side search. This is the only way to reach a task by text without
 // walking every project, and it reaches tasks that are not assigned to you.
 export async function searchCommand(query, options) {
@@ -23,12 +25,27 @@ export async function searchCommand(query, options) {
     return;
   }
 
+  // An unrecognised class is accepted by the server and simply matches nothing,
+  // which is indistinguishable from a genuine zero-result search.
+  const requested = String(options.type ?? 'task').toLowerCase();
+  if (!SEARCHABLE_TYPES.includes(requested)) {
+    emitError({
+      command: 'search',
+      kind: 'bad_argument',
+      message: `--type must be one of ${SEARCHABLE_TYPES.join(', ')} (got "${options.type}")`,
+      hint: 'The server matches nothing for an unknown class, which looks identical to no results',
+      human: options.human,
+      exitCode: EXIT.USAGE,
+    });
+    return;
+  }
+
   const config = requireConfig();
   const nowMs = Date.now();
   const client = new Client(config);
   const ctx = await loadContext(client, { baseUrl: config.baseUrl, nowMs });
 
-  const type = options.type ? capitalize(options.type) : 'Task';
+  const type = capitalize(requested);
   const raw = await client.search(query, { type, page: options.page });
 
   // Results arrive wrapped: each element is {hit: {...}} plus scoring metadata.

@@ -59,7 +59,10 @@ export function absorbProjects(ctx, related) {
 // Resolves a user reference the way a person would type it: their own id by
 // default, a numeric id, an email, or a fragment of a display name.
 export function resolveUserRef(ctx, ref, selfId) {
-  if (!ref || ref === 'me') return { id: selfId };
+  if (ref === undefined || ref === null || ref === 'me') return { id: selfId };
+  // An explicitly empty --user is a mistake, not a request for your own tasks.
+  // Silently answering with the caller's own work would look like a valid result.
+  if (String(ref).trim() === '') return { error: 'empty' };
 
   if (/^\d+$/.test(String(ref))) return { id: Number(ref) };
 
@@ -74,13 +77,18 @@ export function resolveUserRef(ctx, ref, selfId) {
   );
   if (matches.length === 1) return { id: matches[0].id };
   if (matches.length > 1) {
+    // The full count and the shown count are reported separately: saying
+    // "matches 10 people" while 34 actually match would send a caller hunting
+    // for a distinguishing detail among the wrong ten.
     return {
       error: 'ambiguous',
+      match_count: matches.length,
       candidates: matches.slice(0, 10).map((u) => ({
         id: u.id,
         name: u.display_name,
         email: u.email,
       })),
+      candidates_truncated: matches.length > 10,
     };
   }
   return { error: 'not_found' };

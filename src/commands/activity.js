@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { requireConfig } from '../config.js';
 import { Client } from '../client.js';
-import { emit } from '../output.js';
+import { emit, emitError, EXIT } from '../output.js';
 import { toIso } from '../format.js';
 
 // ActiveCollab names these classes after the event, not the object, so they are
@@ -23,11 +23,28 @@ function labelFor(cls) {
   return ACTION[cls] || cls?.replace(/(Notification|ActivityLog)$/, '') || 'unknown';
 }
 
+const FEEDS = { me: 'notifications', project: 'whats-new' };
+
 export async function activityCommand(options) {
   const config = requireConfig();
-  const client = new Client(config);
 
-  const source = options.feed === 'project' ? 'whats-new' : 'notifications';
+  // Falling back to the default feed for an unrecognised value would answer a
+  // different question than the one asked, and look like success while doing it.
+  const feed = String(options.feed ?? 'me').toLowerCase();
+  if (!(feed in FEEDS)) {
+    emitError({
+      command: 'activity',
+      kind: 'bad_argument',
+      message: `--feed must be one of ${Object.keys(FEEDS).join(', ')} (got "${options.feed}")`,
+      hint: '--feed me shows events addressed to you; --feed project shows instance-wide changes',
+      human: options.human,
+      exitCode: EXIT.USAGE,
+    });
+    return;
+  }
+
+  const client = new Client(config);
+  const source = FEEDS[feed];
   const [payload, users] = await Promise.all([
     source === 'whats-new' ? client.whatsNew() : client.notifications(),
     client.users(),

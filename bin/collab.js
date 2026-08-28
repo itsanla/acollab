@@ -22,6 +22,15 @@ const program = new Command();
 // inherit either setting.
 const wantsHuman = process.argv.includes('-h') || process.argv.includes('--human');
 
+// Commander's codes are camelCase; every kind this CLI emits itself is
+// snake_case. One vocabulary is easier to match on than two.
+function toSnake(code) {
+  return String(code || 'usage_error')
+    .replace('commander.', '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase();
+}
+
 function handleCommanderExit(err) {
   // Help and version are successful outputs, not errors.
   if (err.code === 'commander.help' || err.code === 'commander.helpDisplayed' || err.code === 'commander.version') {
@@ -29,7 +38,7 @@ function handleCommanderExit(err) {
   }
   emitError({
     command: 'collab',
-    kind: err.code?.replace('commander.', '') || 'usage_error',
+    kind: toSnake(err.code),
     message: err.message,
     hint: 'Run "collab --help" for usage',
     human: wantsHuman,
@@ -155,7 +164,9 @@ human(program.argument('[taskId]', 'shorthand for "collab task <taskId>"')).acti
     }
     if (!/^\d+$/.test(String(taskId))) {
       emitError({
-        command: 'task',
+        // Attributed to the CLI, not to "task": the caller never asked for the
+        // task command, they mistyped a command name.
+        command: 'collab',
         kind: 'unknown_command',
         message: `Unknown command "${taskId}"`,
         hint: 'Run "collab --help" for the command list',
@@ -173,6 +184,10 @@ human(program.argument('[taskId]', 'shorthand for "collab task <taskId>"')).acti
 // not produce both a stray line and a JSON object.
 for (const cmd of [program, ...program.commands]) {
   cmd.exitOverride(handleCommanderExit);
+  // Without this, `collab tasks completed` quietly discards "completed" and
+  // returns OPEN tasks with ok:true, which reads as a valid answer to a question
+  // that was never asked. The root keeps its optional [taskId] shorthand.
+  if (cmd !== program) cmd.allowExcessArguments(false);
   if (!wantsHuman) {
     cmd.configureOutput({ writeErr: () => {} });
   }

@@ -38,12 +38,26 @@ export async function tasksCommand(options) {
   const ctx = await loadContext(client, { baseUrl: config.baseUrl, nowMs });
 
   const target = resolveUserRef(ctx, options.user, config.userId);
+  if (target.error === 'empty') {
+    emitError({
+      command: 'tasks',
+      kind: 'empty_user',
+      message: '--user was given an empty value',
+      hint: 'Omit --user for your own tasks, or pass "me", an id, an email, or part of a name',
+      human: options.human,
+      exitCode: EXIT.USAGE,
+    });
+    return;
+  }
   if (target.error === 'ambiguous') {
+    const shown = target.candidates.map((c) => `${c.id} (${c.email})`).join(', ');
     emitError({
       command: 'tasks',
       kind: 'ambiguous_user',
-      message: `"${options.user}" matches ${target.candidates.length} people`,
-      hint: `Use an id or email: ${target.candidates.map((c) => `${c.id} (${c.email})`).join(', ')}`,
+      message: `"${options.user}" matches ${target.match_count} people`,
+      hint: target.candidates_truncated
+        ? `Use an id or email. First ${target.candidates.length} of ${target.match_count}: ${shown}`
+        : `Use an id or email: ${shown}`,
       human: options.human,
       exitCode: EXIT.USAGE,
     });
@@ -67,6 +81,7 @@ export async function tasksCommand(options) {
       command: 'tasks',
       kind: 'bad_argument',
       message: `--status must be one of open, completed, all (got "${options.status}")`,
+      hint: 'Use --status open, --status completed, or --status all',
       human: options.human,
       exitCode: EXIT.USAGE,
     });

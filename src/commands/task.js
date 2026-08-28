@@ -45,6 +45,21 @@ async function resolveProjectId(client, ctx, taskId, selfId) {
 }
 
 export async function taskCommand(taskId, options) {
+  // Rejected before any network work: a non-numeric id can never match, and
+  // discovering that via an 18-request sweep wastes two seconds to report a
+  // "not found" that is really a malformed argument.
+  if (!/^\d+$/.test(String(taskId))) {
+    emitError({
+      command: 'task',
+      kind: 'bad_argument',
+      message: `Task id must be numeric (got "${taskId}")`,
+      hint: 'Find ids with "collab tasks" or "collab search <text>"',
+      human: options.human,
+      exitCode: EXIT.USAGE,
+    });
+    return;
+  }
+
   const config = requireConfig();
   const nowMs = Date.now();
   const client = new Client(config);
