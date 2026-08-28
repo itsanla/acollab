@@ -1,74 +1,188 @@
 #!/usr/bin/env node
-import { Command } from 'commander';
-import chalk from 'chalk';
+import { Command, InvalidArgumentError } from 'commander';
 import { loginCommand } from '../src/commands/login.js';
 import { logoutCommand } from '../src/commands/logout.js';
 import { whoamiCommand } from '../src/commands/whoami.js';
+import { peopleCommand } from '../src/commands/people.js';
 import { projectsCommand } from '../src/commands/projects.js';
 import { tasksCommand } from '../src/commands/tasks.js';
 import { taskCommand } from '../src/commands/task.js';
 import { activityCommand } from '../src/commands/activity.js';
+import { briefCommand } from '../src/commands/brief.js';
+import { searchCommand } from '../src/commands/search.js';
+import { manifestCommand } from '../src/commands/manifest.js';
+import { runCommand, emitError, EXIT } from '../src/output.js';
 
 const program = new Command();
 
+// Commander reports its own failures (unknown option, missing argument) as bare
+// text on stderr. A consumer that only knows how to parse this CLI's envelope
+// would see nothing it recognises, so those failures are converted too. Applied
+// to every subcommand at the bottom of this file, because commander does not
+// inherit either setting.
+const wantsHuman = process.argv.includes('-h') || process.argv.includes('--human');
+
+function handleCommanderExit(err) {
+  // Help and version are successful outputs, not errors.
+  if (err.code === 'commander.help' || err.code === 'commander.helpDisplayed' || err.code === 'commander.version') {
+    process.exit(0);
+  }
+  emitError({
+    command: 'collab',
+    kind: err.code?.replace('commander.', '') || 'usage_error',
+    message: err.message,
+    hint: 'Run "collab --help" for usage',
+    human: wantsHuman,
+    exitCode: EXIT.USAGE,
+  });
+  process.exit(EXIT.USAGE);
+}
+
 program
   .name('collab')
-  .description('Unofficial CLI for self-hosted ActiveCollab')
-  .version('0.1.1')
-  .showHelpAfterError(); // "collab task" (missing <taskId>) shows full usage, not just a one-line error
+  .description(
+    'CLI for self-hosted ActiveCollab. Outputs JSON by default (built for AI agents); add -h for a human-readable view.',
+  )
+  .version('0.2.0')
+  // -h is deliberately NOT help here: it is --human. Help stays on --help, which
+  // commander still wires up for every subcommand.
+  .helpOption('--help', 'display help')
+  .showHelpAfterError();
 
-program
-  .command('login <url>')
-  .description('Log in to a self-hosted ActiveCollab instance')
-  .option('-e, --email <email>', 'account email (will prompt if omitted)')
-  .option('-p, --password <password>', 'account password (will prompt if omitted, safer to let it prompt)')
-  .action(loginCommand);
+// Applied to every command so the flag behaves identically everywhere.
+const human = (cmd) => cmd.option('-h, --human', 'human-readable output instead of JSON');
 
-program
-  .command('logout')
-  .description('Clear the locally stored session')
-  .action(logoutCommand);
-
-program
-  .command('whoami')
-  .description('Show the currently logged in account and server')
-  .action(whoamiCommand);
-
-program
-  .command('projects')
-  .description('List all projects you can see')
-  .action(projectsCommand);
-
-program
-  .command('tasks')
-  .description('Your "My Work" tasks, grouped by project and list')
-  .option('-a, --all', 'include completed tasks')
-  .action(tasksCommand);
-
-program
-  .command('task <taskId>')
-  .description('Show one task in detail, including comments')
-  .action(taskCommand);
-
-program
-  .command('activity')
-  .description('Recent notifications/activity feed')
-  .option('-n, --limit <n>', 'how many entries to show', '20')
-  .action(activityCommand);
-
-program
-  .argument('[taskId]')
-  .action((taskId) => {
-    // "collab" alone -> show the command list (like --help).
-    // "collab <number>" -> shorthand for "collab task <number>".
-    if (taskId) {
-      taskCommand(taskId);
-    } else {
-      program.help();
+// Commander hands option values back as strings. Without coercion "--limit abc"
+// becomes NaN and is silently ignored, and "--limit -5" reaches Array.slice as a
+// negative index and quietly drops rows off the END of the list. Both look like
+// success to a consumer, which is worse than an error.
+function positiveInt(label) {
+  return (value) => {
+    if (!/^\d+$/.test(value)) {
+      throw new InvalidArgumentError(`${label} must be a non-negative whole number (got "${value}")`);
     }
-  });
+    return Number(value);
+  };
+}
+
+human(
+  program
+    .command('login <url>')
+    .description('Authenticate against an ActiveCollab instance and store the session')
+    .option('-e, --email <email>', 'account email (prompts when omitted)')
+    .option('-p, --password <password>', 'account password (prompts when omitted)'),
+).action(runCommand('login', loginCommand));
+
+human(program.command('logout').description('Clear the stored session')).action(
+  runCommand('logout', logoutCommand),
+);
+
+human(program.command('whoami').description('Current account, server and instance preferences')).action(
+  runCommand('whoami', whoamiCommand),
+);
+
+human(
+  program
+    .command('people')
+    .description('Directory of users, for finding whose tasks to read')
+    .option('-s, --search <text>', 'filter by name, email or title')
+    .option('-a, --all', 'include archived accounts'),
+).action(runCommand('people', peopleCommand));
+
+human(
+  program
+    .command('projects')
+    .description('Projects visible to you')
+    .option('--archived', 'list archived projects instead of active ones'),
+).action(runCommand('projects', projectsCommand));
+
+human(
+  program
+    .command('tasks')
+    .description('Assigned tasks, open and completed, for yourself or a colleague')
+    .option('-u, --user <ref>', 'whose tasks: "me", a user id, an email, or part of a name', 'me')
+    .option('-s, --status <status>', 'open | completed | all', 'open')
+    .option('-p, --project <id>', 'restrict to one project id', positiveInt('--project'))
+    .option('-l, --label <text>', 'only tasks carrying a matching label')
+    .option('--overdue', 'only tasks past their due date')
+    .option('-n, --limit <n>', 'cap the number of tasks returned', positiveInt('--limit')),
+).action(runCommand('tasks', tasksCommand));
+
+human(
+  program
+    .command('task <taskId>')
+    .description('One task in full: body, comments, subtasks, attachments, dependencies')
+    .option('-p, --project <id>', 'skip project lookup by naming the project id', positiveInt('--project'))
+    .option('-t, --time', 'include time records for the task'),
+).action(runCommand('task', taskCommand));
+
+human(
+  program
+    .command('activity')
+    .description('Recent events: notifications aimed at you, or project-wide changes')
+    .option('-n, --limit <n>', 'how many events', positiveInt('--limit'), 25)
+    .option('-f, --feed <feed>', 'me | project', 'me'),
+).action(runCommand('activity', activityCommand));
+
+human(
+  program
+    .command('brief')
+    .description('A single digest of your current workload, built for an agent starting a session'),
+).action(runCommand('brief', briefCommand));
+
+human(
+  program
+    .command('manifest')
+    .description('Machine-readable description of this CLI: commands, output contract, known data gaps'),
+).action(runCommand('manifest', (options) => manifestCommand(program, options)));
+
+human(
+  program
+    .command('search <query>')
+    .description('Full-text search across the instance, including tasks not assigned to you')
+    .option('-t, --type <type>', 'object class to search: task, project, note, discussion', 'task')
+    .option('-m, --mine', 'only results assigned to you')
+    .option('--page <n>', 'result page (100 per page)', positiveInt('--page')),
+).action(runCommand('search', searchCommand));
+
+// Bare `collab <number>` is shorthand for `collab task <number>`; bare `collab`
+// prints help rather than guessing what was wanted.
+human(program.argument('[taskId]', 'shorthand for "collab task <taskId>"')).action(
+  runCommand('task', async (taskId, options) => {
+    if (!taskId) {
+      program.outputHelp();
+      return;
+    }
+    if (!/^\d+$/.test(String(taskId))) {
+      emitError({
+        command: 'task',
+        kind: 'unknown_command',
+        message: `Unknown command "${taskId}"`,
+        hint: 'Run "collab --help" for the command list',
+        human: options.human,
+        exitCode: EXIT.USAGE,
+      });
+      return;
+    }
+    await taskCommand(taskId, options);
+  }),
+);
+
+// Route commander's own diagnostics through the envelope, on the root and on
+// every subcommand. Its plain-text writer is silenced first so a failure does
+// not produce both a stray line and a JSON object.
+for (const cmd of [program, ...program.commands]) {
+  cmd.exitOverride(handleCommanderExit);
+  if (!wantsHuman) {
+    cmd.configureOutput({ writeErr: () => {} });
+  }
+}
 
 program.parseAsync(process.argv).catch((err) => {
-  console.error(chalk.red(err.message || err));
-  process.exit(1);
+  emitError({
+    command: 'collab',
+    kind: 'internal_error',
+    message: err?.message || String(err),
+    human: wantsHuman,
+  });
 });

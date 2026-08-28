@@ -1,7 +1,12 @@
-import chalk from 'chalk';
-import { clearConfig } from '../config.js';
+import { clearConfig, configPath } from '../config.js';
+import { emit } from '../output.js';
 
-export function logoutCommand() {
+export function logoutCommand(options) {
   clearConfig();
-  console.log(chalk.green('Logged out. Local session cleared.'));
+  emit({
+    command: 'logout',
+    data: { logged_out: true, session_file: configPath() },
+    human: options.human,
+    renderHuman: () => console.log('Logged out. Local session cleared.'),
+  });
 }

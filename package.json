@@ -1,7 +1,7 @@
 {
   "name": "acollab-cli",
-  "version": "0.1.1",
-  "description": "Unofficial command-line client for self-hosted ActiveCollab (API v1)",
+  "version": "0.2.0",
+  "description": "Unofficial CLI for self-hosted ActiveCollab, JSON-first for AI agents (API v1)",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -22,7 +22,10 @@
     "activecollab",
     "cli",
     "project-management",
-    "self-hosted"
+    "self-hosted",
+    "json",
+    "ai-agent",
+    "llm"
   ],
   "dependencies": {
     "commander": "^12.1.0",
