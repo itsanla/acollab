@@ -99,8 +99,12 @@ export async function tasksCommand(options) {
 
   let tasks = [...openRaw, ...completedRaw].map((t) => normalizeTask(t, ctx));
 
-  if (options.project) {
+  let unknownProject = false;
+  if (options.project !== undefined) {
     const pid = Number(options.project);
+    // "No tasks" and "no such project" look identical once the filter has run,
+    // and an agent would report the wrong thing. They are distinguished here.
+    unknownProject = !ctx.projectsById.has(pid);
     tasks = tasks.filter((t) => t.project?.id === pid);
   }
   if (options.overdue) {
@@ -155,6 +159,11 @@ export async function tasksCommand(options) {
       : {}),
     ...(cappedProjects
       ? { warning_truncated: `${cappedProjects} project archive(s) hit the page cap; older completed tasks may be missing` }
+      : {}),
+    ...(unknownProject
+      ? {
+          warning_project: `Project ${options.project} is not among the projects visible to you, so this result is empty for that reason rather than because the project has no tasks`,
+        }
       : {}),
   };
 

@@ -4,11 +4,25 @@ import { requireConfig } from '../config.js';
 import { Client } from '../client.js';
 import { loadContext } from '../context.js';
 import { normalizeTask } from '../normalize.js';
-import { emit } from '../output.js';
+import { emit, emitError, EXIT } from '../output.js';
 
 // Server-side search. This is the only way to reach a task by text without
 // walking every project, and it reaches tasks that are not assigned to you.
 export async function searchCommand(query, options) {
+  // The server answers an empty query with a generic 500, which tells a caller
+  // nothing about what to do differently.
+  if (!query || !query.trim()) {
+    emitError({
+      command: 'search',
+      kind: 'empty_query',
+      message: 'Search query cannot be empty',
+      hint: 'Provide text to search for: collab search "sonar"',
+      human: options.human,
+      exitCode: EXIT.USAGE,
+    });
+    return;
+  }
+
   const config = requireConfig();
   const nowMs = Date.now();
   const client = new Client(config);
