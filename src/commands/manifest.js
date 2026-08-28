@@ -43,10 +43,13 @@ export function manifestCommand(program, options) {
       timestamps: 'ISO-8601 UTC (fields ending in _at)',
       dates: 'YYYY-MM-DD, not timezone-shifted (fields ending in _on)',
       derived_fields:
-        'days_until_due and is_overdue are precomputed from epochs so the consumer never does date maths',
+        'days_until_due and is_overdue are precomputed against the INSTANCE timezone, not UTC, so "overdue" matches what the user sees in the web UI',
       foreign_keys:
         'ids are resolved inline to {id,name,email}; you never have to join against a separate map',
       empty_values: 'zero and false are always emitted; null means genuinely unknown',
+      truncation:
+        'anything clipped carries a *_truncated flag or a *_meta block next to it; absence of the flag means the value is complete',
+      task_status: 'open | completed | trashed',
     },
     // Stated plainly because these are places where the upstream API loses data
     // and a consumer that assumes completeness will be wrong.
@@ -55,6 +58,8 @@ export function manifestCommand(program, options) {
       'Completed tasks have no per-user endpoint, so they are gathered per project and filtered client-side; this is the expensive path.',
       'Project archives page at a fixed 30 per page and are walked to exhaustion, capped at 40 pages per project.',
       'Counts for another person reflect what YOU are permitted to see, not their absolute totals.',
+      'List commands carry a 280-character body preview (body_truncated says so); "collab task <id>" returns the full description.',
+      'Project open_task_count counts OPEN tasks only; a project showing 0 can still hold hundreds of completed ones.',
       'This CLI is read-only. It cannot comment, complete, assign or log time.',
     ],
     typical_agent_flow: [
