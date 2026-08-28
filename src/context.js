@@ -11,10 +11,14 @@ export async function loadContext(client, { baseUrl, nowMs, withProjects = true 
   // work keeps living in them: a finished task in an archived project is absent
   // from /projects entirely, so anything that only walks the active list will
   // report it as "not found".
-  const [users, projects, archived] = await Promise.all([
+  // The session is fetched alongside the rest (no added latency) purely for
+  // settings.gmt_offset: due-date arithmetic has to happen in the instance's
+  // calendar day, not the server's UTC day.
+  const [users, projects, archived, session] = await Promise.all([
     client.users(),
     withProjects ? client.projects() : Promise.resolve([]),
     withProjects ? client.archivedProjects().catch(() => []) : Promise.resolve([]),
+    client.userSession().catch(() => null),
   ]);
 
   const active = projects.map((p) => ({ ...p, is_archived: false }));
@@ -24,6 +28,8 @@ export async function loadContext(client, { baseUrl, nowMs, withProjects = true 
   return {
     baseUrl,
     nowMs,
+    gmtOffset: session?.settings?.gmt_offset ?? 0,
+    timezone: session?.settings?.timezone ?? null,
     users: userIndex(users),
     rawUsers: users,
     projects: active,

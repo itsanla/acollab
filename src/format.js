@@ -39,14 +39,18 @@ export function toDateOnly(unixSeconds) {
   return iso ? iso.slice(0, 10) : null;
 }
 
-// Whole days from `todayIso` until the due date. Negative means overdue.
-// Precomputed because "is this late?" is the single most common question asked
-// of this data, and date arithmetic is a place consumers reliably slip up.
-export function daysUntil(unixSeconds, nowMs) {
+// Whole days until the due date. Negative means overdue.
+//
+// Both sides are converted to the INSTANCE's calendar day, not UTC's. Due dates
+// are stored as midnight UTC, but "is this late?" is judged against the day the
+// user is actually living in: at 00:30 in Jakarta (UTC+7) it is still the
+// previous day in UTC, and a UTC-based answer would call an overdue task
+// "due today" for seven hours every night.
+export function daysUntil(unixSeconds, nowMs, gmtOffsetSeconds = 0) {
   if (!unixSeconds) return null;
-  const dueUtcDay = Math.floor(unixSeconds / 86400);
-  const nowUtcDay = Math.floor(nowMs / 1000 / 86400);
-  return dueUtcDay - nowUtcDay;
+  const dueDay = Math.floor(unixSeconds / 86400);
+  const nowLocalDay = Math.floor((nowMs / 1000 + gmtOffsetSeconds) / 86400);
+  return dueDay - nowLocalDay;
 }
 
 export function labelNames(labels) {

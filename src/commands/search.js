@@ -3,7 +3,7 @@ import Table from 'cli-table3';
 import { requireConfig } from '../config.js';
 import { Client } from '../client.js';
 import { loadContext } from '../context.js';
-import { normalizeTask } from '../normalize.js';
+import { normalizeTask, normalizeProject } from '../normalize.js';
 import { emit, emitError, EXIT } from '../output.js';
 
 const SEARCHABLE_TYPES = ['task', 'project', 'note', 'discussion', 'file'];
@@ -52,10 +52,11 @@ export async function searchCommand(query, options) {
   const hits = (Array.isArray(raw) ? raw : []).map((r) => r.hit ?? r).filter(Boolean);
 
   const results = hits.map((h) => {
-    if (h.class === 'Task') {
-      const t = normalizeTask(h, ctx);
-      return { type: 'Task', ...t };
-    }
+    if (h.class === 'Task') return { type: 'Task', ...normalizeTask(h, ctx) };
+    // Projects get the same treatment as anywhere else in the CLI. Returning
+    // only id/name/url made a completed or archived project indistinguishable
+    // from an active one.
+    if (h.class === 'Project') return { type: 'Project', ...normalizeProject(h, ctx) };
     return {
       type: h.class ?? null,
       id: h.id,

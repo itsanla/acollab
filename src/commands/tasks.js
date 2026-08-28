@@ -13,7 +13,17 @@ async function fetchCompletedFor(client, ctx, userId) {
   // Archived projects are included: finished work is exactly what ends up there.
   const archives = await client.mapLimit(ctx.allProjects, async (project) => {
     try {
-      return await client.allProjectArchivedTasks(project.id);
+      // The archive carries task_list_id but no names, and completed tasks often
+      // sit in lists that no open task references, so the names have to come from
+      // the project's own task payload or every completed row reads "null".
+      const [listing, archive] = await Promise.all([
+        client.projectTasks(project.id).catch(() => null),
+        client.allProjectArchivedTasks(project.id),
+      ]);
+      for (const tl of listing?.task_lists || []) {
+        ctx.taskListsById.set(tl.id, tl);
+      }
+      return archive;
     } catch {
       // A project we can list but cannot read the archive of should not sink the
       // whole command; the meta block reports the shortfall instead.
@@ -157,7 +167,13 @@ export async function tasksCommand(options) {
       label: options.label || null,
     },
     tasks,
-    subtasks: subtaskRaw.map((s) => normalizeTask(s, ctx)),
+    // Subtasks are separate objects with their own ids; without the parent id
+    // they look like tasks that "collab task <id>" cannot find.
+    subtasks: subtaskRaw.map((s) => ({
+      ...normalizeTask(s, ctx),
+      parent_task_id: s.task_id ?? s.parent_id ?? null,
+      is_subtask: true,
+    })),
   };
 
   const meta = {

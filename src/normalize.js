@@ -16,12 +16,13 @@ export function normalizeTask(raw, ctx, { fullBody = false } = {}) {
     users = new Map(),
     baseUrl = '',
     nowMs = 0,
+    gmtOffset = 0,
   } = ctx || {};
 
   const project = projectsById.get(raw.project_id);
   const taskList = taskListsById.get(raw.task_list_id);
   const due = raw.due_on;
-  const daysLeft = daysUntil(due, nowMs);
+  const daysLeft = daysUntil(due, nowMs, gmtOffset);
   const completed = Boolean(raw.is_completed);
   const trashed = Boolean(raw.is_trashed);
 
@@ -51,8 +52,8 @@ export function normalizeTask(raw, ctx, { fullBody = false } = {}) {
     delegated_by: resolveUser(users, raw.delegated_by_id),
 
     due_on: toDateOnly(due),
-    // Precomputed so "is this late" never depends on the consumer's clock or
-    // timezone handling. Null when there is no due date at all.
+    // Precomputed against the INSTANCE's calendar day so "is this late" never
+    // depends on the consumer's clock. Null when there is no due date at all.
     days_until_due: completed ? null : daysLeft,
     is_overdue: !completed && daysLeft !== null && daysLeft < 0,
     start_on: toDateOnly(raw.start_on),
@@ -61,7 +62,9 @@ export function normalizeTask(raw, ctx, { fullBody = false } = {}) {
     updated_at: toIso(raw.updated_on),
     completed_at: toIso(raw.completed_on),
 
-    estimate_hours: raw.estimate ? Number(raw.estimate) : null,
+    // An explicit estimate of 0 is a value the instance actually holds; only a
+    // missing field is unknown.
+    estimate_hours: raw.estimate === undefined || raw.estimate === null ? null : Number(raw.estimate),
     comments_count: raw.comments_count ?? 0,
     subtasks: {
       total: raw.total_subtasks ?? 0,
@@ -114,7 +117,7 @@ export function normalizeComment(raw, ctx) {
 }
 
 export function normalizeProject(raw, ctx) {
-  const { users = new Map(), baseUrl = '', nowMs = 0 } = ctx || {};
+  const { users = new Map(), baseUrl = '', nowMs = 0, gmtOffset = 0 } = ctx || {};
   return {
     id: raw.id,
     name: raw.name,
@@ -123,26 +126,28 @@ export function normalizeProject(raw, ctx) {
     leader: resolveUser(users, raw.leader_id),
     member_ids: Array.isArray(raw.members) ? raw.members : [],
     member_count: Array.isArray(raw.members) ? raw.members.length : 0,
-    task_count: raw.count_tasks ?? null,
+    // The server's count_tasks counts OPEN tasks only, so it is named for what it
+    // is. A project showing 0 here can still hold hundreds of completed tasks.
+    open_task_count: raw.count_tasks ?? null,
     company_id: raw.company_id ?? null,
     created_at: toIso(raw.created_on),
     last_activity_at: toIso(raw.last_activity_on),
     days_since_activity:
-      raw.last_activity_on && nowMs ? -daysUntil(raw.last_activity_on, nowMs) : null,
+      raw.last_activity_on && nowMs ? -daysUntil(raw.last_activity_on, nowMs, gmtOffset) : null,
     is_billable: Boolean(raw.is_billable),
     budget_type: raw.budget_type ?? null,
   };
 }
 
 export function normalizeSubtask(raw, ctx) {
-  const { users = new Map(), nowMs = 0 } = ctx || {};
+  const { users = new Map(), nowMs = 0, gmtOffset = 0 } = ctx || {};
   return {
     id: raw.id,
     name: raw.name ?? raw.body ?? null,
     status: raw.is_completed ? 'completed' : 'open',
     assignee: resolveUser(users, raw.assignee_id),
     due_on: toDateOnly(raw.due_on),
-    days_until_due: raw.is_completed ? null : daysUntil(raw.due_on, nowMs),
+    days_until_due: raw.is_completed ? null : daysUntil(raw.due_on, nowMs, gmtOffset),
     created_at: toIso(raw.created_on),
     completed_at: toIso(raw.completed_on),
   };

@@ -4,7 +4,7 @@ import { Client } from '../client.js';
 import { loadContext, absorbTaskLists, absorbProjects } from '../context.js';
 import { normalizeTask, normalizeComment, normalizeSubtask, normalizeTimeRecord } from '../normalize.js';
 import { emit, emitError, EXIT } from '../output.js';
-import { toIso } from '../format.js';
+import { toIso, resolveUser } from '../format.js';
 
 // A task id alone is not addressable in this API: every task read needs its
 // project id. Resolution goes cheapest-first.
@@ -106,8 +106,10 @@ export async function taskCommand(taskId, options) {
   const data = {
     ...task,
     resolved_via: via,
+    // The endpoint returns bare ids here; resolving them keeps the promise that
+    // no consumer has to join against a separate people list.
     subscribers: (detail.subscribers || []).map((s) =>
-      typeof s === 'object' ? { id: s.id ?? null, name: s.display_name ?? s.name ?? null } : { id: s },
+      resolveUser(ctx.users, typeof s === 'object' ? s.id : s),
     ),
     subtask_items: (detail.subtasks || []).map((s) => normalizeSubtask(s, ctx)),
     // The detail endpoint hands back at most 30 comments and offers no paging

@@ -24,6 +24,7 @@ function labelFor(cls) {
 }
 
 const FEEDS = { me: 'notifications', project: 'whats-new' };
+const EXCERPT_CHARS = 400;
 
 export async function activityCommand(options) {
   const config = requireConfig();
@@ -71,9 +72,12 @@ export async function activityCommand(options) {
           ? { type: 'Project', id: parentId, name: projects[parentId].name }
           : { type: parentType, id: parentId, name: null };
 
-    const commentBody = n.comment_id && comments[n.comment_id]
-      ? (comments[n.comment_id].body_plain_text || '').trim().slice(0, 400)
+    const rawComment = n.comment_id && comments[n.comment_id]
+      ? (comments[n.comment_id].body_plain_text || '').trim()
       : null;
+    // Clipped excerpts are marked, so a reader can tell a short comment from a
+    // long one that was cut.
+    const clipped = rawComment !== null && rawComment.length > EXCERPT_CHARS;
 
     return {
       id: n.id,
@@ -84,7 +88,9 @@ export async function activityCommand(options) {
         name: nameById.get(n.sender_id ?? n.created_by_id) ?? n.created_by_name ?? null,
       },
       target,
-      comment_excerpt: commentBody,
+      comment_excerpt: clipped ? `${rawComment.slice(0, EXCERPT_CHARS).trimEnd()}...` : rawComment,
+      comment_excerpt_truncated: clipped,
+      ...(clipped ? { comment_full_chars: rawComment.length } : {}),
       occurred_at: toIso(n.created_on),
       url: n.url_path ? `${config.baseUrl}${n.url_path}` : null,
     };

@@ -28,7 +28,7 @@ export async function projectsCommand(options) {
     human: options.human,
     renderHuman: (d) => {
       const table = new Table({
-        head: ['ID', 'Name', 'Tasks', 'Members', 'Leader', 'Last activity'],
+        head: ['ID', 'Name', 'Open', 'Members', 'Leader', 'Last activity'],
         style: { head: [] },
         colWidths: [7, 44, 8, 9, 22, 14],
         wordWrap: true,
@@ -37,7 +37,7 @@ export async function projectsCommand(options) {
         table.push([
           p.id,
           p.status === 'completed' ? chalk.gray(p.name) : p.name,
-          p.task_count ?? '',
+          p.open_task_count ?? '',
           p.member_count,
           p.leader?.name || '',
           p.last_activity_at?.slice(0, 10) || '',

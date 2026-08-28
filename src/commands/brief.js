@@ -59,13 +59,14 @@ export async function briefCommand(options) {
   const nameById = new Map(ctx.rawUsers.map((u) => [u.id, u.display_name]));
   const relatedTasks = notifications.related?.Task || {};
   const relatedComments = notifications.related?.Comment || {};
-  const recent = (notifications.notifications || []).slice(0, 8).map((n) => ({
+  const allNotifications = notifications.notifications || [];
+  const RECENT_SHOWN = 8;
+  const EXCERPT_CHARS = 200;
+  const recent = allNotifications.slice(0, RECENT_SHOWN).map((n) => ({
     action: n.class?.replace(/Notification$/, '') ?? null,
     actor: nameById.get(n.sender_id) ?? null,
     target: relatedTasks[n.parent_id]?.name ?? `${n.parent_type ?? ''} #${n.parent_id ?? ''}`,
-    excerpt: n.comment_id && relatedComments[n.comment_id]
-      ? (relatedComments[n.comment_id].body_plain_text || '').trim().slice(0, 200)
-      : null,
+    ...excerptOf(n, relatedComments, EXCERPT_CHARS),
     occurred_at: toIso(n.created_on),
   }));
 
@@ -103,10 +104,35 @@ export async function briefCommand(options) {
   emit({
     command: 'brief',
     data,
-    meta: { api_requests: client.requestCount },
+    meta: {
+      api_requests: client.requestCount,
+      // brief is a digest, so it is bounded by design; saying so stops a reader
+      // treating eight events as the whole story.
+      recent_activity: {
+        shown: recent.length,
+        available: allNotifications.length,
+        truncated: allNotifications.length > recent.length,
+        full_feed: 'collab activity',
+      },
+      scope: 'open tasks only; completed work is at "collab tasks --status completed"',
+    },
     human: options.human,
     renderHuman: renderBriefHuman,
   });
+}
+
+// A silently clipped excerpt reads as a complete comment, so the clipping is
+// stated alongside the text.
+function excerptOf(notification, comments, limit) {
+  const comment = notification.comment_id ? comments[notification.comment_id] : null;
+  if (!comment) return { excerpt: null, excerpt_truncated: false };
+  const full = (comment.body_plain_text || '').trim();
+  if (full.length <= limit) return { excerpt: full, excerpt_truncated: false };
+  return {
+    excerpt: `${full.slice(0, limit).trimEnd()}...`,
+    excerpt_truncated: true,
+    excerpt_full_chars: full.length,
+  };
 }
 
 function slim(t) {
