@@ -1,6 +1,6 @@
 {
   "name": "acollab-cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Unofficial CLI for self-hosted ActiveCollab, JSON-first for AI agents (API v1)",
   "license": "MIT",
   "type": "module",

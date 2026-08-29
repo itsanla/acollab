@@ -5,6 +5,7 @@ import { Client } from '../client.js';
 import { loadContext, absorbTaskLists, absorbProjects, resolveUserRef } from '../context.js';
 import { normalizeTask } from '../normalize.js';
 import { emit, emitError, EXIT } from '../output.js';
+import { parseRange, dateValueFor, todayLocal, DATE_FIELDS, RANGE_KEYWORDS } from '../daterange.js';
 
 // Open assignments come from one cheap call. Completed ones do not exist on that
 // endpoint at all, so they have to be gathered per project from the archive and
@@ -41,7 +42,7 @@ async function fetchCompletedFor(client, ctx, userId) {
   return { completed, unreadable, capped };
 }
 
-export async function tasksCommand(options) {
+export async function tasksCommand(range, options) {
   const config = requireConfig();
   const nowMs = Date.now();
   const client = new Client(config);
@@ -85,7 +86,38 @@ export async function tasksCommand(options) {
     return;
   }
 
-  const status = (options.status || 'open').toLowerCase();
+  const dateField = String(options.dateField || 'due').toLowerCase();
+  if (!DATE_FIELDS.includes(dateField)) {
+    emitError({
+      command: 'tasks',
+      kind: 'bad_argument',
+      message: `--date-field must be one of ${DATE_FIELDS.join(', ')} (got "${options.dateField}")`,
+      human: options.human,
+      exitCode: EXIT.USAGE,
+    });
+    return;
+  }
+
+  const today = todayLocal(nowMs, ctx.gmtOffset);
+  const rangeExpr = range ?? options.due ?? null;
+  const parsed = parseRange(rangeExpr, { today, firstWeekDay: ctx.firstWeekDay });
+  if (parsed?.error) {
+    emitError({
+      command: 'tasks',
+      kind: 'bad_range',
+      message: parsed.message,
+      hint: `Use a keyword (${RANGE_KEYWORDS.join(', ')}), a date (2026-09-01), a span (2026-09-01..2026-09-30), or a relative window (+7d, -30d)`,
+      human: options.human,
+      exitCode: EXIT.USAGE,
+    });
+    return;
+  }
+
+  // Filtering on when something was FINISHED only makes sense over finished
+  // work, so the status default follows the question being asked rather than
+  // silently returning nothing.
+  const statusDefault = dateField === 'completed' ? 'completed' : 'open';
+  const status = (options.status || statusDefault).toLowerCase();
   if (!['open', 'completed', 'all'].includes(status)) {
     emitError({
       command: 'tasks',
@@ -135,6 +167,23 @@ export async function tasksCommand(options) {
   if (options.overdue) {
     tasks = tasks.filter((t) => t.is_overdue);
   }
+  let undatedExcluded = 0;
+  let outsideRange = 0;
+  if (parsed) {
+    // The two reasons a task drops out are counted separately: "has no due date"
+    // and "is dated outside the window" lead to different next actions, and
+    // lumping them together would misexplain an empty result.
+    tasks = tasks.filter((t) => {
+      const value = dateValueFor(t, dateField, ctx.gmtOffset);
+      if (value === null) {
+        undatedExcluded += 1;
+        return false;
+      }
+      const inside = value >= parsed.from && value <= parsed.to;
+      if (!inside) outsideRange += 1;
+      return inside;
+    });
+  }
   if (options.label) {
     const needle = options.label.toLowerCase();
     tasks = tasks.filter((t) => t.labels.some((l) => l.toLowerCase().includes(needle)));
@@ -165,6 +214,12 @@ export async function tasksCommand(options) {
       project: options.project ? Number(options.project) : null,
       overdue_only: Boolean(options.overdue),
       label: options.label || null,
+      date_range: parsed
+        ? { field: dateField, from: parsed.from, to: parsed.to, expression: parsed.label }
+        : null,
+      // Stated so a consumer can reproduce or shift the window without having to
+      // know the instance's timezone rules.
+      today_in_instance_timezone: today,
     },
     tasks,
     // Subtasks are separate objects with their own ids; without the parent id
@@ -191,6 +246,15 @@ export async function tasksCommand(options) {
     ...(cappedProjects
       ? { warning_truncated: `${cappedProjects} project archive(s) hit the page cap; older completed tasks may be missing` }
       : {}),
+    ...(parsed
+      ? {
+          filtered_out: {
+            outside_range: outsideRange,
+            no_date_on_field: undatedExcluded,
+            field: dateField,
+          },
+        }
+      : {}),
     ...(unknownProject
       ? {
           warning_project: `Project ${options.project} is not among the projects visible to you, so this result is empty for that reason rather than because the project has no tasks`,
@@ -203,7 +267,15 @@ export async function tasksCommand(options) {
 
 function renderTasksHuman(data, meta) {
   const who = data.user?.name || `user ${data.user?.id}`;
-  console.log(chalk.bold(`\n${who} — ${meta.counts.returned} task(s), filter: ${data.filters.status}`));
+  const dr = data.filters.date_range;
+  const window = dr ? `, ${dr.field} ${dr.from}..${dr.to} (${dr.expression})` : '';
+  console.log(chalk.bold(`\n${who} — ${meta.counts.returned} task(s), ${data.filters.status}${window}`));
+  if (meta.filtered_out) {
+    const f = meta.filtered_out;
+    console.log(
+      chalk.gray(`filtered out: ${f.outside_range} outside the window, ${f.no_date_on_field} with no ${f.field} date`),
+    );
+  }
   if (meta.warning) console.log(chalk.yellow(meta.warning));
 
   const byProject = new Map();
@@ -221,13 +293,18 @@ function renderTasksHuman(data, meta) {
   for (const [projectName, list] of byProject) {
     console.log(chalk.bold.cyan(`\n${projectName}`));
     const table = new Table({
-      head: ['', 'ID', 'Name', 'List', 'Label', 'Due', 'Days'],
+      head: ['State', 'ID', 'Name', 'List', 'Label', 'Due', 'Days'],
       style: { head: [] },
-      colWidths: [3, 9, 52, 22, 18, 12, 7],
+      colWidths: [9, 9, 50, 20, 18, 12, 7],
       wordWrap: true,
     });
     for (const t of list) {
-      const icon = t.status === 'completed' ? chalk.green('done') : chalk.gray('open');
+      const icon =
+        t.status === 'completed'
+          ? chalk.green('done')
+          : t.status === 'trashed'
+            ? chalk.red('trashed')
+            : chalk.gray('open');
       const days =
         t.status === 'completed'
           ? ''

@@ -40,6 +40,13 @@ collab tasks --status all       # open AND completed
 collab tasks --status completed --user rozi@javan.co.id   # a colleague's finished work
 collab tasks --overdue          # only what is late
 collab task 133852              # one task in full: body, comments, subtasks, attachments
+
+# date windows
+collab tasks today
+collab tasks this-week
+collab tasks 2026-09-01..2026-09-30
+collab tasks next-7d
+collab tasks last-month --date-field completed   # what was actually finished last month
 collab search "sonar"           # full-text, reaches tasks not assigned to you
 collab projects                 # projects, with archived ones via --archived
 collab people                   # directory, for finding whose tasks to read
@@ -57,6 +64,22 @@ collab task 133852 -h
 ```
 
 `collab <number>` is shorthand for `collab task <number>`.
+
+### Date windows
+
+`collab tasks [range]` accepts `today`, `tomorrow`, `yesterday`, `this-week`, `last-week`,
+`next-week`, `this-month`, `last-month`, `next-month`, a single date (`2026-09-01`), a span
+(`2026-09-01..2026-09-30`), or a relative window (`last-30d`, `next-7d`).
+
+Windows resolve in the **instance's** timezone, and weeks start on whichever day the instance is
+configured for, so `today` and `this-week` mean the same thing here as they do in the web UI.
+
+`--date-field` chooses which date the window applies to: `due` (default), `created`, `completed`,
+`start`, `updated`. Asking for `completed` switches `--status` to `completed` on its own, since an
+open task has no completion date.
+
+Relative forms that start with a dash (`-30d`) collide with option parsing and need `collab tasks -- -30d`;
+`last-30d` is the same window without the ceremony.
 
 ## Why JSON first
 

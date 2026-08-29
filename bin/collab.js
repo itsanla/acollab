@@ -12,6 +12,7 @@ import { briefCommand } from '../src/commands/brief.js';
 import { searchCommand } from '../src/commands/search.js';
 import { manifestCommand } from '../src/commands/manifest.js';
 import { runCommand, emitError, EXIT } from '../src/output.js';
+import { RANGE_KEYWORDS } from '../src/daterange.js';
 
 const program = new Command();
 
@@ -52,7 +53,7 @@ program
   .description(
     'CLI for self-hosted ActiveCollab. Outputs JSON by default (built for AI agents); add -h for a human-readable view.',
   )
-  .version('0.2.0')
+  .version('0.3.0')
   // -h is deliberately NOT help here: it is --human. Help stays on --help, which
   // commander still wires up for every subcommand.
   .helpOption('--help', 'display help')
@@ -108,12 +109,18 @@ human(
 human(
   program
     .command('tasks')
-    .description('Assigned tasks, open and completed, for yourself or a colleague')
+    .argument(
+      '[range]',
+      'date window: today, tomorrow, yesterday, this-week, last-week, next-week, this-month, last-month, next-month, last-30d, next-7d, 2026-09-01, 2026-09-01..2026-09-30',
+    )
+    .description('Assigned tasks, open and completed, optionally within a date window')
     .option('-u, --user <ref>', 'whose tasks: "me", a user id, an email, or part of a name', 'me')
-    .option('-s, --status <status>', 'open | completed | all', 'open')
+    .option('-s, --status <status>', 'open | completed | all (defaults to completed when --date-field completed)')
     .option('-p, --project <id>', 'restrict to one project id', positiveInt('--project'))
     .option('-l, --label <text>', 'only tasks carrying a matching label')
     .option('--overdue', 'only tasks past their due date')
+    .option('--due <range>', 'same as the positional range argument')
+    .option('-d, --date-field <field>', 'which date the range applies to: due | created | completed | start | updated', 'due')
     .option('-n, --limit <n>', 'cap the number of tasks returned', positiveInt('--limit')),
 ).action(runCommand('tasks', tasksCommand));
 
@@ -163,13 +170,19 @@ human(program.argument('[taskId]', 'shorthand for "collab task <taskId>"')).acti
       return;
     }
     if (!/^\d+$/.test(String(taskId))) {
+      const arg = String(taskId);
+      // A bare date or keyword is a date window, not a command name.
+      const looksLikeRange =
+        RANGE_KEYWORDS.includes(arg.toLowerCase()) ||
+        /^\d{4}-\d{2}-\d{2}(\.\.\d{4}-\d{2}-\d{2})?$/.test(arg) ||
+        /^[+-]?\d+d$/.test(arg);
       emitError({
         // Attributed to the CLI, not to "task": the caller never asked for the
         // task command, they mistyped a command name.
         command: 'collab',
-        kind: 'unknown_command',
-        message: `Unknown command "${taskId}"`,
-        hint: 'Run "collab --help" for the command list',
+        kind: looksLikeRange ? 'bad_argument' : 'unknown_command',
+        message: looksLikeRange ? `"${arg}" is a date range, not a command` : `Unknown command "${arg}"`,
+        hint: looksLikeRange ? `Use: collab tasks ${arg}` : 'Run "collab --help" for the command list',
         human: options.human,
         exitCode: EXIT.USAGE,
       });

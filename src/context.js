@@ -30,6 +30,9 @@ export async function loadContext(client, { baseUrl, nowMs, withProjects = true 
     nowMs,
     gmtOffset: session?.settings?.gmt_offset ?? 0,
     timezone: session?.settings?.timezone ?? null,
+    // 0 = Sunday, 1 = Monday. Taken from the instance so "this week" matches the
+    // week the user sees in the web UI rather than a hardcoded guess.
+    firstWeekDay: session?.settings?.time_first_week_day ?? 1,
     users: userIndex(users),
     rawUsers: users,
     projects: active,

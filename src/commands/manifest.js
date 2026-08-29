@@ -62,11 +62,34 @@ export function manifestCommand(program, options) {
       'Project open_task_count counts OPEN tasks only; a project showing 0 can still hold hundreds of completed ones.',
       'This CLI is read-only. It cannot comment, complete, assign or log time.',
     ],
+    date_ranges: {
+      applies_to: 'collab tasks [range] (or --due <range>)',
+      keywords: [
+        'today',
+        'tomorrow',
+        'yesterday',
+        'this-week',
+        'last-week',
+        'next-week',
+        'this-month',
+        'last-month',
+        'next-month',
+      ],
+      other_forms: ['2026-09-01', '2026-09-01..2026-09-30', 'last-30d', 'next-7d', '+7d', '-30d'],
+      note: 'Forms starting with a dash need "--" first (collab tasks -- -30d); last-30d and next-7d avoid that.',
+      field_selector: 'collab tasks <range> --date-field due|created|completed|start|updated (default due)',
+      timezone:
+        'Windows are resolved in the instance timezone, and weeks start on the day the instance is configured for, so "today" and "this-week" match the web UI.',
+      status_interaction:
+        '--date-field completed defaults --status to completed, because open tasks have no completion date.',
+    },
     typical_agent_flow: [
-      'collab brief              # one call: workload, urgency buckets, recent activity',
-      'collab task <id>          # full detail of anything the brief surfaced',
-      'collab tasks --status all # everything including finished work',
-      'collab search <text>      # reach tasks not assigned to you',
+      'collab brief                                  # one call: workload, urgency buckets, recent activity',
+      'collab tasks today                            # what is due today',
+      'collab tasks this-week                        # the week ahead',
+      'collab tasks last-month --date-field completed # what was actually finished',
+      'collab task <id>                              # full detail of anything above',
+      'collab search <text>                          # reach tasks not assigned to you',
     ],
     commands,
   };

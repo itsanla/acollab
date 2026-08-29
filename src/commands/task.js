@@ -5,6 +5,7 @@ import { loadContext, absorbTaskLists, absorbProjects } from '../context.js';
 import { normalizeTask, normalizeComment, normalizeSubtask, normalizeTimeRecord } from '../normalize.js';
 import { emit, emitError, EXIT } from '../output.js';
 import { toIso, resolveUser } from '../format.js';
+import { RANGE_KEYWORDS } from '../daterange.js';
 
 // A task id alone is not addressable in this API: every task read needs its
 // project id. Resolution goes cheapest-first.
@@ -49,11 +50,20 @@ export async function taskCommand(taskId, options) {
   // discovering that via an 18-request sweep wastes two seconds to report a
   // "not found" that is really a malformed argument.
   if (!/^\d+$/.test(String(taskId))) {
+    // "collab task today" is a natural thing to type for a date window. It
+    // belongs to the plural command, so say so instead of only refusing.
+    const looksLikeRange =
+      RANGE_KEYWORDS.includes(String(taskId).toLowerCase()) ||
+      /^\d{4}-\d{2}-\d{2}(\.\.\d{4}-\d{2}-\d{2})?$/.test(String(taskId)) ||
+      /^[+-]?\d+d$/.test(String(taskId));
+
     emitError({
       command: 'task',
       kind: 'bad_argument',
       message: `Task id must be numeric (got "${taskId}")`,
-      hint: 'Find ids with "collab tasks" or "collab search <text>"',
+      hint: looksLikeRange
+        ? `"${taskId}" is a date range, and ranges list tasks rather than open one. Use: collab tasks ${taskId}`
+        : 'Find ids with "collab tasks" or "collab search <text>"',
       human: options.human,
       exitCode: EXIT.USAGE,
     });
