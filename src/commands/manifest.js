@@ -5,8 +5,9 @@ import { emit } from '../output.js';
 // do, what each field means, and where the data is incomplete, without anyone
 // having written that into its prompt.
 export function manifestCommand(program, options) {
+  // Includes itself: a self-description that omits the command producing it is
+  // incomplete for anyone reading a saved copy.
   const commands = program.commands
-    .filter((c) => c.name() !== 'manifest')
     .map((c) => ({
       name: c.name(),
       usage: `collab ${c.name()} ${c.usage()}`.trim(),
