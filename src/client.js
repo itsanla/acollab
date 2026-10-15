@@ -54,12 +54,19 @@ export class Client {
   }
 
   async request(path) {
+    const res = await this.fetchOk(path);
+    return res.json();
+  }
+
+  // Returns the raw Response so binary bodies can be streamed instead of parsed.
+  async fetchOk(path, { timeoutMs } = {}) {
     this.requestCount += 1;
     const res = await fetch(`${this.baseUrl}/api/v1${path}`, {
       headers: {
         'X-Angie-AuthApiToken': this.token,
         'User-Agent': USER_AGENT,
       },
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     });
     if (!res.ok) {
       let message = `HTTP ${res.status}`;
@@ -72,7 +79,7 @@ export class Client {
       }
       throw new ApiError(message, { status: res.status, path, body });
     }
-    return res.json();
+    return res;
   }
 
   // Runs tasks with a concurrency cap. The API is fine with ~6 in flight; going
@@ -166,6 +173,18 @@ export class Client {
 
   taskTimeRecords(projectId, taskId) {
     return this.request(`/projects/${projectId}/tasks/${taskId}/time-records`);
+  }
+
+  // --- attachments ------------------------------------------------------
+
+  // The only working way to fetch a file. The `download_url` on every attachment
+  // object points at proxy.php with a `--DOWNLOAD-TOKEN--` placeholder and 404s
+  // whether that placeholder is replaced by the API token or removed. This route
+  // takes the normal API header and needs no project id. The Content-Disposition
+  // filename is mangled for non-ASCII names (× arrives as Ã), so callers name the
+  // file from the attachment object, not from the response.
+  downloadAttachment(attachmentId, options) {
+    return this.fetchOk(`/attachments/${attachmentId}/download`, options);
   }
 
   // --- activity ---------------------------------------------------------

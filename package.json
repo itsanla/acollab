@@ -1,6 +1,6 @@
 {
   "name": "acollab-cli",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Unofficial CLI for self-hosted ActiveCollab, JSON-first for AI agents (API v1)",
   "license": "MIT",
   "type": "module",
@@ -12,7 +12,7 @@
     "collab": "bin/collab.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "files": [
     "bin",
@@ -28,8 +28,14 @@
     "llm"
   ],
   "dependencies": {
-    "commander": "^12.1.0",
     "chalk": "^5.3.0",
-    "cli-table3": "^0.6.5"
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0",
+    "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
+    "sharp": "^0.35.5",
+    "turndown": "^7.2.4",
+    "unpdf": "^1.8.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

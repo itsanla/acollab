@@ -12,11 +12,25 @@ const HTML_ENTITIES = {
   '&nbsp;': ' ',
 };
 
+// An image pasted into a body is an attachment rendered as
+// <img alt="name" image-type="attachment" object-id="<attachment id>">. Stripping
+// the tag would hide that a picture sat there, so it becomes a marker carrying
+// the id that `collab files` downloads.
+function imageMarker(tag) {
+  const attr = (name) => tag.match(new RegExp(`\\b${name}="([^"]*)"`, 'i'))?.[1] ?? null;
+  const id = attr('object-id');
+  const alt = attr('alt');
+  if (id) return `[image #${id}${alt ? `: ${alt}` : ''}]`;
+  const src = attr('src');
+  return src && /^https?:\/\//i.test(src) ? `[image: ${src}]` : '';
+}
+
 // ActiveCollab stores task bodies as HTML. Comments already carry
 // `body_plain_text`, task bodies do not, so they go through this.
 export function htmlToText(html) {
   if (!html) return '';
   return html
+    .replace(/<img\b[^>]*>/gi, imageMarker)
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
     .replace(/<li[^>]*>/gi, '- ')

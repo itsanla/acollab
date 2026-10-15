@@ -6,6 +6,7 @@
 // joins and the same date maths, so it happens once, here.
 
 import { htmlToText, toIso, toDateOnly, daysUntil, labelNames, resolveUser } from './format.js';
+import { normalizeAttachment, replaceDeadFileLinks } from './attachments.js';
 
 const PREVIEW_CHARS = 280;
 
@@ -98,6 +99,9 @@ function bodyFields(rawBody, fullBody) {
 
 export function normalizeComment(raw, ctx) {
   const { baseUrl = '' } = ctx || {};
+  const attachments = (raw.attachments || []).map((a) =>
+    normalizeAttachment(a, { type: 'comment', comment_id: raw.id, author: raw.created_by_name ?? null }),
+  );
   return {
     id: raw.id,
     author: {
@@ -109,9 +113,10 @@ export function normalizeComment(raw, ctx) {
     edited_at: raw.last_modification_on ? toIso(raw.last_modification_on) : null,
     // Comments carry a plain-text rendition already; only fall back to stripping
     // HTML when the server omits it.
-    body: raw.body_plain_text?.trim() || htmlToText(raw.body),
+    body: replaceDeadFileLinks(raw.body_plain_text?.trim(), attachments) || htmlToText(raw.body),
     reactions: Array.isArray(raw.reactions) ? raw.reactions.length : 0,
-    attachments_count: Array.isArray(raw.attachments) ? raw.attachments.length : 0,
+    attachments_count: attachments.length,
+    attachments,
     url: raw.url_path ? `${baseUrl}${raw.url_path}` : null,
   };
 }

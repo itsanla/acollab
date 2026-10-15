@@ -4,12 +4,14 @@ import { Client } from '../client.js';
 import { loadContext, absorbTaskLists, absorbProjects } from '../context.js';
 import { normalizeTask, normalizeComment, normalizeSubtask, normalizeTimeRecord } from '../normalize.js';
 import { emit, emitError, EXIT } from '../output.js';
-import { toIso, resolveUser } from '../format.js';
+import { resolveUser } from '../format.js';
 import { RANGE_KEYWORDS } from '../daterange.js';
+import { normalizeAttachment, attachmentSummary, taskFilesDir } from '../attachments.js';
+import { materializeAttachments } from '../files.js';
 
 // A task id alone is not addressable in this API: every task read needs its
 // project id. Resolution goes cheapest-first.
-async function resolveProjectId(client, ctx, taskId, selfId) {
+export async function resolveProjectId(client, ctx, taskId, selfId) {
   const wanted = Number(taskId);
 
   // 1. The caller's own open work is one request and covers the common case.
@@ -45,11 +47,23 @@ async function resolveProjectId(client, ctx, taskId, selfId) {
   return projectId ? { projectId, via: 'project_scan' } : { projectId: null, via: 'not_found' };
 }
 
-export async function taskCommand(taskId, options) {
+// Accepts what people actually paste: a bare id, or the task's web URL
+// (https://host/projects/503/tasks/148709), which also names the project and so
+// skips the project sweep.
+export function parseTaskRef(arg) {
+  const s = String(arg ?? '').trim();
+  if (/^\d+$/.test(s)) return { taskId: s, projectId: null };
+  const m = s.match(/\/projects\/(\d+)\/tasks\/(\d+)(?:[/?#]|$)/);
+  return m ? { taskId: m[2], projectId: Number(m[1]) } : null;
+}
+
+export async function taskCommand(taskArg, options) {
+  const ref = parseTaskRef(taskArg);
+  const taskId = ref?.taskId ?? String(taskArg);
   // Rejected before any network work: a non-numeric id can never match, and
   // discovering that via an 18-request sweep wastes two seconds to report a
   // "not found" that is really a malformed argument.
-  if (!/^\d+$/.test(String(taskId))) {
+  if (!ref) {
     // "collab task today" is a natural thing to type for a date window. It
     // belongs to the plural command, so say so instead of only refusing.
     const looksLikeRange =
@@ -60,7 +74,7 @@ export async function taskCommand(taskId, options) {
     emitError({
       command: 'task',
       kind: 'bad_argument',
-      message: `Task id must be numeric (got "${taskId}")`,
+      message: `Expected a numeric task id or a task URL (got "${taskId}")`,
       hint: looksLikeRange
         ? `"${taskId}" is a date range, and ranges list tasks rather than open one. Use: collab tasks ${taskId}`
         : 'Find ids with "collab tasks" or "collab search <text>"',
@@ -75,8 +89,8 @@ export async function taskCommand(taskId, options) {
   const client = new Client(config);
   const ctx = await loadContext(client, { baseUrl: config.baseUrl, nowMs });
 
-  let projectId = options.project ? Number(options.project) : null;
-  let via = 'explicit_flag';
+  let projectId = options.project ? Number(options.project) : ref.projectId;
+  let via = options.project ? 'explicit_flag' : ref.projectId ? 'task_url' : null;
 
   if (!projectId) {
     const resolved = await resolveProjectId(client, ctx, taskId, config.userId);
@@ -113,6 +127,22 @@ export async function taskCommand(taskId, options) {
     }
   }
 
+  const commentsTruncated = (raw.comments_count ?? 0) > (detail.comments || []).length;
+  const comments = (detail.comments || [])
+    .map((c) => normalizeComment(c, ctx))
+    .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+  const attachments = (raw.attachments || []).map((a) => normalizeAttachment(a, { type: 'task' }));
+  // The same objects that sit in `attachments` and in comments[].attachments, so
+  // the paths recorded on them show up in both places.
+  const allFiles = [...attachments, ...comments.flatMap((c) => c.attachments)];
+  const fetched =
+    options.files !== false && allFiles.length
+      ? await materializeAttachments(client, allFiles, {
+          dir: taskFilesDir(projectId, taskId),
+          allFiles: Boolean(options.allFiles),
+        })
+      : null;
+
   const data = {
     ...task,
     resolved_via: via,
@@ -129,22 +159,16 @@ export async function taskCommand(taskId, options) {
     comments_meta: {
       total: raw.comments_count ?? 0,
       returned: (detail.comments || []).length,
-      truncated: (raw.comments_count ?? 0) > (detail.comments || []).length,
-      note:
-        (raw.comments_count ?? 0) > (detail.comments || []).length
-          ? 'The API caps this endpoint at the 30 most recent comments and exposes no way to page further. Older comments are only visible in the web UI.'
-          : null,
+      truncated: commentsTruncated,
+      note: commentsTruncated
+        ? 'The API caps this endpoint at the 30 most recent comments and exposes no way to page further. Older comments are only visible in the web UI.'
+        : null,
     },
-    comments: (detail.comments || [])
-      .map((c) => normalizeComment(c, ctx))
-      .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || '')),
-    attachments: (raw.attachments || []).map((a) => ({
-      id: a.id,
-      name: a.name,
-      size_bytes: a.size ?? null,
-      mime_type: a.mime_type ?? null,
-      created_at: toIso(a.created_on),
-    })),
+    comments,
+    // Files on the task itself; each comment carries its own under
+    // comments[].attachments. files_meta covers both.
+    attachments,
+    files_meta: filesMeta(allFiles, attachments.length, fetched, commentsTruncated, options),
     reminders: (detail.reminders || []).length,
     tracked_time_hours: detail.tracked_time ?? 0,
     tracked_expenses: detail.tracked_expenses ?? 0,
@@ -158,6 +182,43 @@ export async function taskCommand(taskId, options) {
     human: options.human,
     renderHuman: renderTaskHuman,
   });
+}
+
+function filesMeta(all, fromTask, fetched, commentsTruncated, options) {
+  const notes = [];
+  if (options.files === false && all.length) notes.push('Files were not fetched (--no-files); attachments carry no paths.');
+  if (commentsTruncated) notes.push('Files on comments older than the 30 newest are not reachable through the API.');
+  return {
+    ...attachmentSummary(all),
+    from_task: fromTask,
+    from_comments: all.length - fromTask,
+    directory: fetched?.directory ?? null,
+    ...(fetched
+      ? {
+          readable: fetched.readable,
+          downloaded: fetched.downloaded,
+          cached: fetched.cached,
+          skipped: fetched.skipped,
+          failed: fetched.failed,
+        }
+      : {}),
+    complete: !commentsTruncated,
+    note: notes.length ? notes.join(' ') : null,
+  };
+}
+
+function formatBytes(n) {
+  if (!n) return '0 B';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function renderAttachmentHuman(a, indent) {
+  console.log(`${indent}#${a.id} ${a.name} ${chalk.gray(`(${a.kind}, ${formatBytes(a.size_bytes)})`)}`);
+  const pad = ' '.repeat(indent.length + 2);
+  if (a.path) console.log(chalk.green(`${pad}${a.path}`));
+  if (a.note) console.log(chalk.yellow(`${pad}${a.note}`));
 }
 
 function renderTaskHuman(t) {
@@ -194,7 +255,7 @@ function renderTaskHuman(t) {
 
   if (t.attachments.length) {
     console.log(chalk.bold(`\nAttachments (${t.attachments.length})`));
-    for (const a of t.attachments) console.log(`  ${a.name}`);
+    for (const a of t.attachments) renderAttachmentHuman(a, '  ');
   }
 
   if (t.comments.length) {
@@ -204,7 +265,13 @@ function renderTaskHuman(t) {
     for (const c of t.comments) {
       console.log(`\n  ${chalk.cyan(c.author.name)} ${chalk.gray(c.created_at?.slice(0, 16).replace('T', ' '))}`);
       console.log(`  ${c.body.split('\n').join('\n  ')}`);
+      for (const a of c.attachments) renderAttachmentHuman(a, '  + ');
     }
   }
+  const fm = t.files_meta;
+  if (fm.directory) {
+    console.log(chalk.gray(`\n${fm.readable}/${fm.total} file(s) readable in ${fm.directory}`));
+  }
+  if (fm.note) console.log(chalk.yellow(fm.note));
   console.log('');
 }

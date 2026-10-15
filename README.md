@@ -40,6 +40,7 @@ collab tasks --status all       # open AND completed
 collab tasks --status completed --user rozi@javan.co.id   # a colleague's finished work
 collab tasks --overdue          # only what is late
 collab task 133852              # one task in full: body, comments, subtasks, attachments
+collab https://your-activecollab.example.com/projects/12/tasks/3456   # a pasted task URL works too
 
 # date windows
 collab tasks today
@@ -63,7 +64,42 @@ collab brief -h
 collab task 133852 -h
 ```
 
-`collab <number>` is shorthand for `collab task <number>`.
+`collab <number>` is shorthand for `collab task <number>`, and so is `collab <task URL>`.
+
+## Attachments become readable files
+
+`collab task` downloads every file on the task and on its comments, including images pasted into
+the text, and turns each into something an AI can read directly:
+
+| Uploaded | Readable form |
+|---|---|
+| Images (jpg, png, webp, gif, tiff, svg, ...) | JPEG, at most 1200 px on the long edge, EXIF-rotated, transparency on white |
+| PDF, DOCX, XLSX/XLS/ODS, PPTX | Markdown, tables kept as Markdown tables |
+| Text, CSV, JSON, HTML, code | Not converted, already readable |
+| Video, audio, archives | Not downloaded unless `--all-files` |
+
+Files land under `~/.acollab/projects/<projectId>/tasks/<taskId>/`, mirroring the task URL. The
+untouched upload is kept in `original/` beside the readable copy, because every conversion loses
+something (pictures in a PDF, the smallest text in a large screenshot). Each attachment in the JSON
+carries absolute paths to both:
+
+```json
+{
+  "id": 5521,
+  "name": "Project Proposal v2.pdf",
+  "kind": "pdf",
+  "source": { "type": "task" },
+  "status": "downloaded",
+  "path": "/home/me/.acollab/projects/12/tasks/3456/5521-project-proposal-v2.md",
+  "original_path": "/home/me/.acollab/projects/12/tasks/3456/original/5521-project-proposal-v2.pdf",
+  "converted": "pdf -> markdown, 15 page(s), 5613 characters"
+}
+```
+
+An image pasted into a description or comment shows up in the text as `[image #<id>: <name>]`, so
+it can be matched to its attachment. A repeat call fetches nothing that has not changed (checksums
+are cached). `--no-files` lists attachments without downloading; `--all-files` also fetches video,
+archives and anything over 50 MB.
 
 ### Date windows
 
@@ -115,14 +151,15 @@ every subcommand (`collab --help`, `collab tasks --help`).
 
 ## Requirements
 
-- Node.js 18+ (uses the built-in `fetch`)
+- Node.js 22+ (the PDF reader needs it)
 - A self-hosted ActiveCollab instance with API v1 enabled (the default)
 
 ## How it authenticates
 
 Uses ActiveCollab's own `POST /api/v1/issue-token`: email and password once, in exchange for a
-reusable token stored at `~/.config/collab-cli/config.json` with mode `0600`. The token is never
-printed and never leaves your machine except to your own server.
+reusable token stored at `~/.acollab/config.json` with mode `0600` (set `ACOLLAB_HOME` to move the
+whole folder). The token is never printed and never leaves your machine except to your own server.
+A session saved by 0.3.x at `~/.config/collab-cli/config.json` is moved there on first run.
 
 ## Known limitations
 
@@ -134,6 +171,10 @@ These are upstream API constraints, surfaced rather than hidden:
   filtered client-side. `collab tasks --status all` is the expensive path (roughly 40 requests).
 - Project archives page at a fixed 30 per page and are walked to exhaustion (capped at 40 pages).
 - Counts for another person reflect **what you are permitted to see**, not their absolute totals.
+- Files on comments older than the 30 newest are unreachable for the same reason
+  (`files_meta.complete` is `false`).
+- HTML attachments never match their server checksum when the instance sits behind Cloudflare,
+  which rewrites HTML responses (font declarations). They are kept, with a note saying so.
 - **Read-only.** No commenting, completing, assigning or time logging: no write semantics beyond
   `issue-token` were verified against a production instance.
 

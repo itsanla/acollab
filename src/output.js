@@ -59,13 +59,23 @@ export function emitError({ command, kind, message, hint, human, exitCode = EXIT
 // when both declare it commander binds the flag to the root, leaving the
 // subcommand's own options empty. Reading both scopes makes `collab brief -h`
 // behave the same as `collab task 1 -h` regardless of where commander filed it.
+// The file flags of `collab task` are shared with the shorthand the same way.
+const SHARED_FLAGS = { human: false, files: true, allFiles: false };
+
 export function runCommand(command, fn) {
   return async (...args) => {
     // Commander calls actions as (...positionals, options, commandObject).
     const cmdObject = args[args.length - 1];
     const ownOpts = typeof cmdObject?.opts === 'function' ? cmdObject.opts() : args[args.length - 2] || {};
     const parentOpts = typeof cmdObject?.parent?.opts === 'function' ? cmdObject.parent.opts() : {};
-    const options = { ...ownOpts, human: Boolean(ownOpts.human || parentOpts.human) };
+    const options = { ...ownOpts };
+    // Whichever scope moved a flag away from its default is the one the user typed.
+    for (const [key, def] of Object.entries(SHARED_FLAGS)) {
+      if (ownOpts[key] !== undefined && ownOpts[key] !== def) options[key] = ownOpts[key];
+      else if (parentOpts[key] !== undefined && parentOpts[key] !== def) options[key] = parentOpts[key];
+      else options[key] = def;
+    }
+    options.human = Boolean(options.human);
     const positionals = args.slice(0, Math.max(0, args.length - 2));
     const human = options.human;
 

@@ -6,7 +6,7 @@ import { whoamiCommand } from '../src/commands/whoami.js';
 import { peopleCommand } from '../src/commands/people.js';
 import { projectsCommand } from '../src/commands/projects.js';
 import { tasksCommand } from '../src/commands/tasks.js';
-import { taskCommand } from '../src/commands/task.js';
+import { taskCommand, parseTaskRef } from '../src/commands/task.js';
 import { activityCommand } from '../src/commands/activity.js';
 import { briefCommand } from '../src/commands/brief.js';
 import { searchCommand } from '../src/commands/search.js';
@@ -53,7 +53,7 @@ program
   .description(
     'CLI for self-hosted ActiveCollab. Outputs JSON by default (built for AI agents); add -h for a human-readable view.',
   )
-  .version('0.3.0')
+  .version('0.4.0')
   // -h is deliberately NOT help here: it is --human. Help stays on --help, which
   // commander still wires up for every subcommand.
   .helpOption('--help', 'display help')
@@ -124,12 +124,22 @@ human(
     .option('-n, --limit <n>', 'cap the number of tasks returned', positiveInt('--limit')),
 ).action(runCommand('tasks', tasksCommand));
 
+// Declared on `task` and on the root, which serves the bare `collab <taskId>`.
+const fileFlags = (cmd) =>
+  cmd
+    .option('--no-files', 'do not download attachments; list them only')
+    .option('--all-files', 'also download video, archives and files over 50 MB (kept as is, not converted)');
+
 human(
-  program
-    .command('task <taskId>')
-    .description('One task in full: body, comments, subtasks, attachments, dependencies')
-    .option('-p, --project <id>', 'skip project lookup by naming the project id', positiveInt('--project'))
-    .option('-t, --time', 'include time records for the task'),
+  fileFlags(
+    program
+      .command('task <task>')
+      .description(
+        'One task in full: body, comments, subtasks, dependencies, and its attachments downloaded to ~/.acollab as readable files (images as JPEG <=1200 px, documents as Markdown)',
+      )
+      .option('-p, --project <id>', 'skip project lookup by naming the project id', positiveInt('--project'))
+      .option('-t, --time', 'include time records for the task'),
+  ),
 ).action(runCommand('task', taskCommand));
 
 human(
@@ -161,15 +171,15 @@ human(
     .option('--page <n>', 'result page (100 per page)', positiveInt('--page')),
 ).action(runCommand('search', searchCommand));
 
-// Bare `collab <number>` is shorthand for `collab task <number>`; bare `collab`
-// prints help rather than guessing what was wanted.
-human(program.argument('[taskId]', 'shorthand for "collab task <taskId>"')).action(
+// Bare `collab <number|url>` is shorthand for `collab task <number|url>`; bare
+// `collab` prints help rather than guessing what was wanted.
+human(fileFlags(program.argument('[task]', 'shorthand for "collab task <task>" (an id or a task URL)'))).action(
   runCommand('task', async (taskId, options) => {
     if (!taskId) {
       program.outputHelp();
       return;
     }
-    if (!/^\d+$/.test(String(taskId))) {
+    if (!parseTaskRef(taskId)) {
       const arg = String(taskId);
       // A bare date or keyword is a date window, not a command name.
       const looksLikeRange =
